@@ -1,6 +1,7 @@
 {
   "name": "makeupai-media-analysis",
   "version": "1.0.0",
+  "description": "Media analysis backend for MakeupAI (audio + video processing stub)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
