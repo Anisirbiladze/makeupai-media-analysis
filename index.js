@@ -8,8 +8,9 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// IMPORTANT: set this in Render → Environment
-const OPENAI_API_KEY = process.env.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 || "";
+// IMPORTANT: do NOT put your key directly here.
+// Set OPENAI_API_KEY as an environment variable on Render.
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 
 // ---------- Helpers ----------
 
