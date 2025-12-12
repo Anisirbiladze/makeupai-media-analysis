@@ -29,7 +29,6 @@ async function downloadMediaToBuffer(url) {
   const arrayBuffer = await resp.arrayBuffer();
   return Buffer.from(arrayBuffer);
 }
-
 // Call OpenAI Whisper to transcribe the audio buffer
 async function transcribeWithWhisper(audioBuffer) {
   if (!OPENAI_API_KEY) {
