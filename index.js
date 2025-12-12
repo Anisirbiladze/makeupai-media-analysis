@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const fetch = require("node-fetch");
+const OpenAI = require("openai");
 
 const app = express();
 app.use(cors());
@@ -8,9 +9,9 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// IMPORTANT: do NOT put your key directly here.
-// Set OPENAI_API_KEY as an environment variable on Render.
+// IMPORTANT: set this in Render → Environment as OPENAI_API_KEY
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 // ---------- Helpers ----------
 
@@ -35,31 +36,18 @@ async function transcribeWithWhisper(audioBuffer) {
     throw new Error("OPENAI_API_KEY is not set");
   }
 
-  // Node 18+ has global FormData & Blob via undici (Render uses Node 22)
-  const form = new FormData();
-  form.append("file", new Blob([audioBuffer]), "audio.mp3");
-  form.append("model", "whisper-1");
-  form.append("response_format", "json");
-
-  const resp = await fetch(
-    "https://api.openai.com/v1/audio/transcriptions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: form,
+  // Use the official OpenAI SDK instead of manual multipart
+  const result = await openai.audio.transcriptions.create({
+    file: {
+      // Provide buffer and filename; SDK handles multipart details
+      data: audioBuffer,
+      name: "audio.mp3",
     },
-  );
+    model: "whisper-1",
+    response_format: "json",
+  });
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    console.error("Whisper error response:", text);
-    throw new Error(`Whisper error ${resp.status}: ${text}`);
-  }
-
-  const data = await resp.json();
-  const text = typeof data.text === "string" ? data.text : "";
+  const text = typeof result.text === "string" ? result.text : "";
   console.log("Whisper transcript length:", text.length);
   return text;
 }
