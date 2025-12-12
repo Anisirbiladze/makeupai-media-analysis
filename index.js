@@ -8,8 +8,62 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// TODO: put your real OpenAI key here, or use process.env.OPENAI_API_KEY on Render
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "YOUR_OPENAI_API_KEY_HERE";
+// IMPORTANT: set this in Render → Environment
+const OPENAI_API_KEY = process.env.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 || "";
+
+// ---------- Helpers ----------
+
+// Download video/audio from a URL into a Buffer
+async function downloadMediaToBuffer(url) {
+  console.log("Downloading media from:", url);
+
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error(
+      `Failed to download media: ${resp.status} ${resp.statusText}`,
+    );
+  }
+
+  const arrayBuffer = await resp.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+// Call OpenAI Whisper to transcribe the audio buffer
+async function transcribeWithWhisper(audioBuffer) {
+  if (!OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
+
+  // Node 18+ has global FormData & Blob via undici (Render uses Node 22)
+  const form = new FormData();
+  form.append("file", new Blob([audioBuffer]), "audio.mp3");
+  form.append("model", "whisper-1");
+  form.append("response_format", "json");
+
+  const resp = await fetch(
+    "https://api.openai.com/v1/audio/transcriptions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: form,
+    },
+  );
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    console.error("Whisper error response:", text);
+    throw new Error(`Whisper error ${resp.status}: ${text}`);
+  }
+
+  const data = await resp.json();
+  const text = typeof data.text === "string" ? data.text : "";
+  console.log("Whisper transcript length:", text.length);
+  return text;
+}
+
+// ---------- Routes ----------
 
 // Simple health check
 app.get("/", (req, res) => {
@@ -20,12 +74,9 @@ app.get("/", (req, res) => {
  * POST /media-analysis
  * Body: { videoUrl: string }
  *
- * For now this is a STUB that returns fake transcript + visualNotes,
- * so you can wire Supabase and see AI products change.
- * Later, you'll:
- * - Download the TikTok video
- * - Extract audio and call Whisper
- * - Sample frames and call gpt-4o vision
+ * - Downloads the video/audio from videoUrl
+ * - Sends audio to OpenAI Whisper for transcription
+ * - Returns { transcript, visualNotes, caption }
  */
 app.post("/media-analysis", async (req, res) => {
   const { videoUrl } = req.body || {};
@@ -35,43 +86,37 @@ app.post("/media-analysis", async (req, res) => {
 
   console.log("media-analysis called for", videoUrl);
 
-  // TODO (future): implement real Whisper + gpt-4o vision here
+  try {
+    // 1) Download media
+    const audioBuffer = await downloadMediaToBuffer(videoUrl);
 
-  // For now, return a fake transcript + visual notes to test the pipeline
-  const transcript = `
-    Today I'm creating an everyday glowy base. I start with Milk Hydro Grip Primer
-    to prep the skin, then I go in with NARS Sheer Glow foundation and a bit of
-    NARS Radiant Creamy Concealer under the eyes. I set everything lightly with
-    Laura Mercier Translucent Setting Powder.
+    // 2) Transcribe with Whisper
+    const transcript = await transcribeWithWhisper(audioBuffer);
 
-    For cheeks I'm using Rare Beauty Soft Pinch Liquid Blush in Joy,
-    Charlotte Tilbury Filmstar Bronze & Glow to bronze and highlight,
-    and a touch of Hourglass Ambient Lighting Powder.
+    // 3) For now, visualNotes are still stubbed
+    const visualNotes = `
+      Visual analysis is not implemented yet. This text is a placeholder.
+      Real visual product detection will be added with GPT-4o vision later.
+    `;
 
-    On the eyes I'm using the Natasha Denona Glam Palette,
-    a KVD Tattoo Liner for the wing and Too Faced Better Than Sex mascara.
-
-    For brows I go in with Anastasia Brow Wiz and Benefit Gimme Brow gel.
-    On the lips I'm using MAC Spice lip liner and Fenty Beauty Gloss Bomb in Fenty Glow.
-  `;
-
-  const visualNotes = `
-    The frames show: Milk Hydro Grip Primer, NARS Sheer Glow Foundation,
-    NARS Radiant Creamy Concealer, Laura Mercier Translucent Setting Powder,
-    Rare Beauty Soft Pinch Liquid Blush, Charlotte Tilbury Filmstar Bronze & Glow,
-    Hourglass Ambient Lighting Powder, Natasha Denona Glam Palette,
-    KVD Tattoo Liner, Too Faced Better Than Sex Mascara,
-    Anastasia Brow Wiz, Benefit Gimme Brow, MAC Spice Lip Pencil,
-    Fenty Beauty Gloss Bomb.
-  `;
-
-  return res.json({
-    transcript,
-    visualNotes,
-    caption: null,
-  });
+    return res.json({
+      transcript,
+      visualNotes,
+      caption: null,
+    });
+  } catch (err) {
+    console.error("media-analysis error:", err);
+    return res.status(500).json({
+      error: "media-analysis-failed",
+      message: err.message || "Unknown error",
+      transcript: "",
+      visualNotes: "",
+      caption: null,
+    });
+  }
 });
 
+// ---------- Start server ----------
 app.listen(PORT, () => {
   console.log(`media-analysis service listening on port ${PORT}`);
 });
