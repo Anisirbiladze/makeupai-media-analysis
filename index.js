@@ -15,6 +15,8 @@ const PORT = process.env.PORT || 3000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+// ---------- Helpers ----------
+
 // Download video/audio from a URL into a temp file on disk
 async function downloadMediaToFile(url, filePath) {
   console.log("Downloading media from:", url);
@@ -30,6 +32,10 @@ async function downloadMediaToFile(url, filePath) {
     const fileStream = fs.createWriteStream(filePath);
     resp.body.pipe(fileStream);
     resp.body.on("error", reject);
+    fileStream.on("finish", resolve);
+  });
+}
+
 // Call OpenAI Whisper to transcribe the audio file at filePath
 async function transcribeWithWhisper(filePath) {
   if (!OPENAI_API_KEY) {
@@ -40,12 +46,6 @@ async function transcribeWithWhisper(filePath) {
     file: fs.createReadStream(filePath),
     model: "whisper-1",
     response_format: "json",
-  });
-
-  const text = typeof result.text === "string" ? result.text : "";
-  console.log("Whisper transcript length:", text.length);
-  return text;
-}   response_format: "json",
   });
 
   const text = typeof result.text === "string" ? result.text : "";
@@ -76,19 +76,18 @@ app.post("/media-analysis", async (req, res) => {
 
   console.log("media-analysis called for", videoUrl);
 
+  // Choose a temp file path
+  const tmpPath = path.join(
+    "/tmp",
+    `audio-${Date.now()}-${Math.random().toString(16).slice(2)}.mp3`,
+  );
+
   try {
-        // 1) Download media to a temp file
-    const tmpPath = path.join(
-      "/tmp",
-      `audio-${Date.now()}-${Math.random().toString(16).slice(2)}.mp3`,
-    );
+    // 1) Download media to temp file
     await downloadMediaToFile(videoUrl, tmpPath);
 
     // 2) Transcribe with Whisper
     const transcript = await transcribeWithWhisper(tmpPath);
-
-    // Clean up temp file (best-effort)
-    fs.unlink(tmpPath, () => {});
 
     // 3) For now, visualNotes are still stubbed
     const visualNotes = `
@@ -110,6 +109,9 @@ app.post("/media-analysis", async (req, res) => {
       visualNotes: "",
       caption: null,
     });
+  } finally {
+    // Clean up temp file (best-effort)
+    fs.unlink(tmpPath, () => {});
   }
 });
 
