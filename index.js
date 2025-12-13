@@ -83,8 +83,20 @@ app.post("/media-analysis", async (req, res) => {
   );
 
   try {
+    let mediaUrl = videoUrl;
+
+    // If this is a TikTok URL, resolve it to a direct video URL first
+    if (mediaUrl.includes("tiktok.com")) {
+      const resolved = await resolveTikTokVideoUrl(mediaUrl);
+      if (!resolved) {
+        throw new Error("Failed to resolve TikTok URL to a direct video URL");
+      }
+      mediaUrl = resolved;
+      console.log("Resolved TikTok URL to direct media URL:", mediaUrl);
+    }
+
     // 1) Download media to temp file
-    await downloadMediaToFile(videoUrl, tmpPath);
+    await downloadMediaToFile(mediaUrl, tmpPath);
 
     // 2) Transcribe with Whisper
     const transcript = await transcribeWithWhisper(tmpPath);
