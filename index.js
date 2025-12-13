@@ -2,6 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const fetch = require("node-fetch");
 const OpenAI = require("openai");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
 app.use(cors());
@@ -13,10 +15,8 @@ const PORT = process.env.PORT || 3000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-// ---------- Helpers ----------
-
-// Download video/audio from a URL into a Buffer
-async function downloadMediaToBuffer(url) {
+// Download video/audio from a URL into a temp file on disk
+async function downloadMediaToFile(url, filePath) {
   console.log("Downloading media from:", url);
 
   const resp = await fetch(url);
@@ -26,25 +26,26 @@ async function downloadMediaToBuffer(url) {
     );
   }
 
-  const arrayBuffer = await resp.arrayBuffer();
-  return Buffer.from(arrayBuffer);
-}
-
-// Call OpenAI Whisper to transcribe the audio buffer
-async function transcribeWithWhisper(audioBuffer) {
+  await new Promise((resolve, reject) => {
+    const fileStream = fs.createWriteStream(filePath);
+    resp.body.pipe(fileStream);
+    resp.body.on("error", reject);
+// Call OpenAI Whisper to transcribe the audio file at filePath
+async function transcribeWithWhisper(filePath) {
   if (!OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not set");
   }
 
-  // Use the official OpenAI SDK instead of manual multipart
   const result = await openai.audio.transcriptions.create({
-    file: {
-      // Provide buffer and filename; SDK handles multipart details
-      data: audioBuffer,
-      name: "audio.mp3",
-    },
+    file: fs.createReadStream(filePath),
     model: "whisper-1",
     response_format: "json",
+  });
+
+  const text = typeof result.text === "string" ? result.text : "";
+  console.log("Whisper transcript length:", text.length);
+  return text;
+}   response_format: "json",
   });
 
   const text = typeof result.text === "string" ? result.text : "";
@@ -76,11 +77,18 @@ app.post("/media-analysis", async (req, res) => {
   console.log("media-analysis called for", videoUrl);
 
   try {
-    // 1) Download media
-    const audioBuffer = await downloadMediaToBuffer(videoUrl);
+        // 1) Download media to a temp file
+    const tmpPath = path.join(
+      "/tmp",
+      `audio-${Date.now()}-${Math.random().toString(16).slice(2)}.mp3`,
+    );
+    await downloadMediaToFile(videoUrl, tmpPath);
 
     // 2) Transcribe with Whisper
-    const transcript = await transcribeWithWhisper(audioBuffer);
+    const transcript = await transcribeWithWhisper(tmpPath);
+
+    // Clean up temp file (best-effort)
+    fs.unlink(tmpPath, () => {});
 
     // 3) For now, visualNotes are still stubbed
     const visualNotes = `
